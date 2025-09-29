@@ -3,8 +3,33 @@
 #include<sys/socket.h>
 #include<arpa/inet.h>
 #include<unistd.h>
+#include<map>
 
 using namespace std;
+
+
+// TODO: If you find time, optimise this to return char array than string array or map 
+// ( point of using c++ is for performance dont waste it like this :) )
+// and make it more fail proof 
+std::map<std::string, string> getCommandMap(string input)  {
+
+    map<string, string> commandmap;
+    string inputsplits[2];
+    int currentIndex = 0;
+    string temp;
+    for(char x: input){
+        if(x == ' '){
+                commandmap["command"] = temp;
+                temp = "";
+                continue;
+        }
+        temp += x;
+    }
+    commandmap["arg"] = temp;
+
+    return commandmap;
+
+}
 
 int main() {
     int sockfd;
@@ -30,6 +55,8 @@ int main() {
 
     cout << "send commands to file server " << endl;
 
+    map<string, string> commandMap;
+
     while (true) {
 
         // getting the message from the server 
@@ -54,7 +81,16 @@ int main() {
                 cout << "[+] Server replied :" << buffer << endl;
                 memset(buffer, 0, sizeof(buffer));
             }
+            continue;
         }
+
+        commandMap.clear();
+
+        commandMap= getCommandMap(msg);
+
+        
+        
+
 
     }
 }

@@ -4,13 +4,62 @@
 #include<cstring>
 #include<dirent.h>
 #include<vector>
+#include<fstream>
+#include<unistd.h>
 
 #include<sys/socket.h>
 #include<sys/types.h>
 #include<netinet/in.h>
 #include<arpa/inet.h>
+#include<map>
 
 using namespace std;
+
+
+# define BUFFER_SIZE 1400 // safe UDP packet size
+
+struct FilePacket{
+    /* data */
+    int packet_id;
+    int total_packets;
+    int data_size;
+    char data[BUFFER_SIZE - sizeof(int)*3]; // each data size has to be reduced by 3 ints because there are 3 integers that are also sent in with the data packet
+};
+
+
+// TODO: If you find time, optimise this to return char array than string array or map 
+// ( point of using c++ is for performance dont waste it like this :) )
+// and make it more fail proof 
+std::map<std::string, string> getCommandMap(string input)  {
+
+    map<string, string> commandmap;
+    string inputsplits[2];
+    int currentIndex = 0;
+    string temp;
+    for(char x: input){
+        if(x == ' '){
+                commandmap["command"] = temp;
+                temp = "";
+                continue;
+        }
+        temp += x;
+    }
+    commandmap["arg"] = temp;
+
+    return commandmap;
+
+}
+
+FilePacket fileSendCheck(string filename){
+    std::ifstream file(filename, std::ios::binary);
+
+    if(!file.is_open()){
+        std::cout << "Error : Cannot open the file " << filename << endl;
+
+        // building error packet and returning it 
+    }
+}
+
 
 string getfilesCWD(){
     const char* path = ".";
@@ -32,6 +81,8 @@ string getfilesCWD(){
     closedir(dir);
     return fileList;
 }
+
+
 
 
 
@@ -76,7 +127,10 @@ int main(){
     cout << "Listening on the socket " << endl;
     cout << "Type 'exit' to end the session " << endl;
     string message; // replace with char array ASAP
+    map<string, string> commandMap;
     while (true) {
+        std::memset(buffer, 0, sizeof(buffer)); 
+        cout << endl;
         recvfrom(sockfd, buffer, 1024, 0, (struct sockaddr*)&remoteAddr, &addr_size);
 
         cout<< "[+] Data recieved from the buffer is " << buffer << endl;
@@ -89,6 +143,7 @@ int main(){
             message = "exiting the file server bye bye !";
             sendto(sockfd, message.c_str(), message.size()+1, 0, (struct sockaddr*)&remoteAddr, addr_size);
             cout<< "[+] exiting the server bye bye !" << endl;
+            message = '\0';
             break;
         }
         
@@ -100,8 +155,17 @@ int main(){
             message='\0';
         }
 
-        std::memset(buffer, 0, sizeof(buffer)); 
-        cout << endl;
+        string buffer_string(buffer);
+
+        commandMap = getCommandMap(buffer_string);
+
+        string fileName = commandMap["arg"];
+
+        if (commandMap["command"]=="get"){
+            
+
+        }
+
 
     }
     return 0;
