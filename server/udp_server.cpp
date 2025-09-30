@@ -24,6 +24,13 @@ struct FilePacket{
     int total_packets;
     int data_size;
     char data[BUFFER_SIZE - sizeof(int)*3]; // each data size has to be reduced by 3 ints because there are 3 integers that are also sent in with the data packet
+
+    void clear() noexcept {
+    packet_id = -1;
+    total_packets = -1;
+    data_size = 0;
+    std::memset(data, 0, sizeof(data));
+}
 };
 
 
@@ -113,7 +120,7 @@ int main(){
     myaddr.sin_family = AF_INET;
     myaddr.sin_port = htons(port);
     myaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    cout << "TCP Packet defined" << endl;
+    cout << "UDP Packet defined" << endl;
 
     // binding your socket 
     // socket type, your address and size of your address 
@@ -122,7 +129,7 @@ int main(){
     bind(sockfd, (struct sockaddr*)&myaddr, sizeof(myaddr));
     addr_size = sizeof(remoteAddr);
 
-    cout << "Socket binded to TCP packets" << endl;
+    cout << "Socket binded to UDP packets" << endl;
 
     // recieving from the socket 
 
@@ -130,12 +137,13 @@ int main(){
     cout << "Type 'exit' to end the session " << endl;
     string message; // replace with char array ASAP
     map<string, string> commandMap;
+    std::map<int, FilePacket> recived_packets; // to store the recived packets
     while (true) {
         std::memset(buffer, 0, sizeof(buffer)); 
         cout << endl;
         recvfrom(sockfd, buffer, 1024, 0, (struct sockaddr*)&remoteAddr, &addr_size);
 
-        cout<< "[+] Data recieved from the buffer is " << buffer << endl;
+        cout << "[+] Data recieved from the buffer is " << buffer << endl;
         cout << "[+] Remote IP address " << inet_ntoa(remoteAddr.sin_addr) << endl;
         cout << "[+] Remote port " << ntohs(remoteAddr.sin_port) << endl;
         cout << "[+] Address Family " << remoteAddr.sin_family << endl;
@@ -155,6 +163,7 @@ int main(){
             cout << "Remote asked for files listing" << endl;
             sendto(sockfd, message.c_str(), message.size()+1, 0, (struct sockaddr*)&remoteAddr, addr_size);
             message='\0';
+            continue;
         }
 
         string buffer_string(buffer);
@@ -219,10 +228,122 @@ int main(){
             std::cout << "File transfer completed for file " << fileName << endl;
             message = '\0';
 
+            continue;
         }
 
+        if (commandMap["command"]=="delete") {
+            std::remove(fileName.c_str());
+            
+            // confirming delete
+            bool success = false; 
+            
+            if(!std::ifstream(fileName.c_str())) {
+                cout << "Cannot read  " << fileName<< " file hence deleted " ;
+                success = true;
+            }
+            
+            // convert it to network byte order 
+            uint32_t netVal = htonl(static_cast<uint32_t>(success));
+            sendto(sockfd, &netVal, sizeof(netVal), 0, (struct sockaddr*)&remoteAddr, addr_size);
+            continue;
+        }
 
-    }
+        if (commandMap["command"] == "put") {
+            // client uploaded a file and asked to store it 
+            fileName = commandMap["arg"];
+
+            // cleaning all the data recived before 
+            recived_packets.clear();
+
+            int total_packets = -1;
+            int packets_recieved = 0;
+
+            // setting timeout for socket, dont wanna spend too much time on the 
+            struct timeval timeout;
+            timeout.tv_sec = 10;
+            timeout.tv_usec = 0;
+
+            // loop to recv file 
+            while (true){
+                FilePacket packet;
+                ssize_t recived = recvfrom(sockfd, &packet, sizeof(packet), 0, (struct sockaddr*)&remoteAddr, &addr_size);
+                
+                if (recived < 0) {
+                    std::cout << "Timeout or recived error " << endl;
+                    break;
+                }
+                // checking for error packet
+                if(packet.packet_id == -1) {
+                    std::cout << "server error : file not found or inaccessable check server logs" << std::endl;
+                    break;
+                }
+
+                // setting total packets from the first packet 
+                if(total_packets == -1) {
+                    total_packets = packet.total_packets;
+                    std::cout << "expecting :" << total_packets << " packets" << endl;
+                }
+                
+                // check if this is a new packet 
+                // TODO: This can be done efficiently for now lets make this work 
+                // why this ?
+                /* coz later when you add ack, that ack packet might be lost right, 
+                hence we need to check its recived or not and I'm not sure at this point,
+                should I send ack here as this means ack didnt reach the server before ? 
+                lets see.
+                */
+                if(recived_packets.find(packet.packet_id) == recived_packets.end()) {
+                    recived_packets[packet.packet_id] = packet;
+                    packets_recieved ++;
+                    cout << "packet recieved :" << packet.packet_id << " current status :" 
+                    << packets_recieved << " /" << total_packets << endl;
+                }
+
+                // sending ack 
+                // TODO: This is gonna be next version ( forgot to handle this on server side )
+                int ack = packet.packet_id;
+                //sendto(sockfd, &ack, sizeof(ack), 0, (const struct sockaddr*)&serverAddr, sizeof(serverAddr));
+
+                // checking for all packets 
+                if(packets_recieved == total_packets) {
+                    cout << "all packets recived, writing file ...." << endl;
+                    break;
+                }
+                packet.clear();
+            }
+
+            // making sure its not the error thing 
+            if (packets_recieved == total_packets) {
+                std::ofstream output_file(fileName, std::ios::binary);
+                if(!output_file.is_open()){
+                    std::cout << "error : cannot create output file " << endl;
+                    return false;
+                }
+
+                /*
+                this definetly can be done better, than map use a better data structure
+                for now lets again make it work 
+                */
+
+                for(int i=0; i<total_packets; i++) {
+                    if(recived_packets.find(i) != recived_packets.end()){
+                        output_file.write(recived_packets[i].data, recived_packets[i].data_size);
+                    }
+                }
+
+                output_file.close();
+                std::cout << "file saved successfully " << fileName << endl;
+                continue;
+            }
+
+            std::cout << "file transfer incomplete " << endl;
+            continue;
+
+
+
+            }
+            
+        }
     return 0;
 
 }

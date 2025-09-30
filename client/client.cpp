@@ -205,6 +205,69 @@ int main() {
             std::cout << "file transfer incomplete " << endl;
             continue;
         }
+
+        if (commandMap["command"]== "delete") {
+            // deleting the file from server ( for some reason :) )
+            uint32_t transVal;
+            int n = recvfrom(sockfd, &transVal, sizeof(transVal), 0, (struct sockaddr*)&serverAddr, &addr_size);
+
+            if(n > 0){
+                transVal = htonl(transVal);
+                bool success = static_cast<bool>(transVal);
+
+                cout << (success? "deleted": "deletion failed" ) << commandMap["arg"] <<endl;
+            } else {
+                cout << "error : wasnt able to read the data || check the server logs " << endl; 
+            }
+            std::memset(&transVal, 0, sizeof(transVal));
+            continue;
+        }
+
+        if (commandMap["command"]=="put"){
+            string filename = commandMap["arg"];
+            std::cout << "Sending file :" << commandMap["arg"] << endl;
+
+            int max_datasize = sizeof(FilePacket::data);
+
+            std::ifstream file(filename, std::ios::binary);
+
+            file.seekg(0, std::ios::end);
+            int file_size = file.tellg();
+            file.seekg(0, std::ios::beg);
+
+            int total_packets = (file_size + max_datasize -1)/max_datasize;
+
+            std::cout << "Sending file :" << filename << "file size :" << file_size << " bytes";
+            std::cout << " Total packets :" << total_packets;
+
+            for(int packet_id=0;packet_id < total_packets; packet_id++) {
+                FilePacket packet;
+                packet.packet_id = packet_id;
+                packet.total_packets = total_packets;
+
+                // read data for this packet 
+                file.read(packet.data, max_datasize);
+                packet.data_size = file.gcount(); // get the actual size of data read
+
+                // sending the packet
+                int bytes_sent = sendto(sockfd, (const char*)&packet, sizeof(packet), 0, (struct sockaddr*)&serverAddr, addr_size);
+                if(bytes_sent <0){
+                    cerr << "Error : sending packet id " << packet_id << endl;
+                    // try sending again 
+                    packet_id--;
+                    continue;
+                }
+                std::cout << "Sent packet id " << packet_id << " with size " << bytes_sent << " bytes" << endl;
+                usleep(1000); // sleep for 1 ms to avoid flooding the network
+            }
+            file.close();
+            std::cout << "File transfer completed for file " << filename << endl;
+
+
+            continue;
+
+
+        }
         
     }
 }
