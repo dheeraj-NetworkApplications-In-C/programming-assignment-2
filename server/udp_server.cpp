@@ -50,15 +50,17 @@ std::map<std::string, string> getCommandMap(string input)  {
 
 }
 
-FilePacket fileSendCheck(string filename){
-    std::ifstream file(filename, std::ios::binary);
+// FilePacket fileSendCheck(string filename){
+//     std::ifstream file(filename, std::ios::binary);
 
-    if(!file.is_open()){
-        std::cout << "Error : Cannot open the file " << filename << endl;
+//     if(!file.is_open()){
+//         std::cout << "Error : Cannot open the file " << filename << endl;
 
-        // building error packet and returning it 
-    }
-}
+//         // building error packet and returning it 
+//     }
+
+//     file.close();
+// }
 
 
 string getfilesCWD(){
@@ -157,12 +159,65 @@ int main(){
 
         string buffer_string(buffer);
 
+        // Am i good at naming or something :)
         commandMap = getCommandMap(buffer_string);
 
         string fileName = commandMap["arg"];
 
         if (commandMap["command"]=="get"){
+            std::cout << "Sending file " << fileName << endl;
             
+            int max_data_size = sizeof(FilePacket::data); // refer the struct above 
+
+            std::ifstream file(fileName, std::ios::binary);
+
+            // getting the file size 
+
+            // going back and forth to cal the total size of the file 
+            file.seekg(0, std::ios::end);
+            int file_size = file.tellg();
+            file.seekg(0, std::ios::beg);
+
+            // cal the number of packets needed 
+            // celieing fit formulae, just ensures you will use just enough packets 
+            int total_packets = (file_size + max_data_size -1)/max_data_size;
+
+            std::cout << "Sending file :" << fileName << "file size :" << file_size << " bytes";
+            std::cout << " Total packets :" << total_packets;
+            
+            // FIXME: try again with end of file thing, could be a bit faster :)
+            // if(!file.eof()){
+            //     FilePacket packet;
+            //     packet.packet_id = packet_id++;
+            //     // reading data 
+            //     file.read(packet.data, max_data_size);
+            //     packet.data_size = file.gcount();
+                
+            // }
+
+            for(int packet_id=0;packet_id < total_packets; packet_id++) {
+                FilePacket packet;
+                packet.packet_id = packet_id;
+                packet.total_packets = total_packets;
+
+                // read data for this packet 
+                file.read(packet.data, max_data_size);
+                packet.data_size = file.gcount(); // get the actual size of data read
+
+                // sending the packet
+                int bytes_sent = sendto(sockfd, (const char*)&packet, sizeof(packet), 0, (struct sockaddr*)&remoteAddr, addr_size);
+                if(bytes_sent <0){
+                    cerr << "Error : sending packet id " << packet_id << endl;
+                    // try sending again 
+                    packet_id--;
+                    continue;
+                }
+                std::cout << "Sent packet id " << packet_id << " with size " << bytes_sent << " bytes" << endl;
+                usleep(1000); // sleep for 1 ms to avoid flooding the network
+            }
+            file.close();
+            std::cout << "File transfer completed for file " << fileName << endl;
+            message = '\0';
 
         }
 
