@@ -17,6 +17,7 @@ using namespace std;
 
 
 # define BUFFER_SIZE 1400 // safe UDP packet size
+# define WIND_SIZE 4 // trying to implement go back n arg, hence defining window size 
 
 struct FilePacket{
     /* data */
@@ -138,6 +139,7 @@ int main(){
     string message; // replace with char array ASAP
     map<string, string> commandMap;
     std::map<int, FilePacket> recived_packets; // to store the recived packets
+    uint32_t ack_pack_id;
     while (true) {
         std::memset(buffer, 0, sizeof(buffer)); 
         cout << endl;
@@ -173,6 +175,7 @@ int main(){
 
         string fileName = commandMap["arg"];
 
+        // get command from the client 
         if (commandMap["command"]=="get"){
             std::cout << "Sending file " << fileName << endl;
             
@@ -201,10 +204,101 @@ int main(){
             //     // reading data 
             //     file.read(packet.data, max_data_size);
             //     packet.data_size = file.gcount();
-                
+            
             // }
 
-            for(int packet_id=0;packet_id < total_packets; packet_id++) {
+            int window_start = 0, current_window_pos = 0, window_end = WIND_SIZE;
+            bool acks[WIND_SIZE];
+            int packed_id_window[WIND_SIZE];
+            int current_acks = 0;
+            int __xl = ack_pack_id;
+
+            // FIXME: update this with linked list (double linked) when you find time 
+
+            // making packet array, this is very bad for large files 
+
+            //FilePacket packets[total_packets];
+            vector<FilePacket> packets(total_packets);
+
+            for(int packet_id =0; packet_id < total_packets; packet_id++){
+                FilePacket p;
+                p.packet_id = packet_id;
+                p.total_packets = total_packets;
+
+                file.read(p.data, max_data_size);
+                p.data_size = file.gcount();
+                packets[packet_id] = p;
+            }
+
+            while(current_window_pos < total_packets) { 
+                FilePacket currentPacket;
+
+                currentPacket = packets[current_window_pos];
+                int bytes_sent = sendto(sockfd, (const char*)&currentPacket, sizeof(currentPacket), 0, (struct sockaddr*)&remoteAddr, addr_size);
+
+                current_window_pos++;
+
+                if(bytes_sent < 0) {
+                    cerr << "error : sending packet id failed " << currentPacket.packet_id << endl;
+                }
+
+                cout << "info : sent packet id " << currentPacket.packet_id << " size " << currentPacket.data_size << endl;
+                usleep(2000);
+
+                // reading ack here 
+                //std::memset(&ack_pack_id, 0, sizeof(ack_pack_id));
+                int n = recvfrom(sockfd, &ack_pack_id, sizeof(ack_pack_id), MSG_DONTWAIT, (struct sockaddr*)&remoteAddr, &addr_size);
+                ack_pack_id = static_cast<uint32_t>(ntohl(ack_pack_id));
+               // cout << "info : recieved ack for packet " << ack_pack_id << endl;
+                if (n > 0) {
+                    int ack_index = ack_pack_id - window_start;
+                    if(ack_index >= 0 && ack_index < WIND_SIZE) { 
+                        acks[ack_index] = true;
+                    }
+                }
+                // also checking window start is
+                if(((current_window_pos - window_start) % WIND_SIZE == 0 || (current_window_pos == total_packets )&& current_window_pos != window_start)) {
+                    // sent all the packets in the window checking for acks
+                    cout << "info : checking acks for window " << window_start << " to " << window_end << endl;
+                    for(int i =0; i<WIND_SIZE ; i++ ){
+                        if (!acks[i]){
+                            // found something that ack has not been recieved hence shifting window to this point 
+                            current_window_pos = window_start + i;
+                            window_start += i;
+                            window_end += i;
+                            cout << "info : ack not recieved for packet " << current_window_pos << endl;
+                            cout << "info : shifting window to packet " << current_window_pos << endl;
+                            cout << "info : updated window start " << window_start << " current window end " << window_end << endl;
+                            current_acks = 0;
+                            std::memset(acks, false, sizeof(acks));
+                            break;
+                        } else {
+                            current_acks++;
+                            cout << "info : ack recieved for packet " << window_start + i << endl;
+                        }
+                    }
+                    // if it came here it means loop didnt break hence it recived acks for all the data 
+                    if(current_acks == WIND_SIZE){
+                        cout << "info : all acks recived for the window " << window_start << " to " << window_end << endl;
+                        window_start += WIND_SIZE;
+                        window_end += WIND_SIZE;
+                        cout << "info : updated window start " << window_start << " current window end " << window_end << endl;
+                        current_acks = 0;
+                        current_window_pos = window_start;
+                        std::memset(acks, false, sizeof(acks));
+                    } 
+                }
+            }
+
+            file.close();
+            std::cout << "File transfer completed for file " << fileName << endl;
+            message = '\0';
+
+            continue;
+
+            // legacy code :) 
+
+            /*for(int packet_id=0;packet_id < total_packets; packet_id++) {
                 FilePacket packet;
                 packet.packet_id = packet_id;
                 packet.total_packets = total_packets;
@@ -215,6 +309,7 @@ int main(){
 
                 // sending the packet
                 int bytes_sent = sendto(sockfd, (const char*)&packet, sizeof(packet), 0, (struct sockaddr*)&remoteAddr, addr_size);
+                current_window_pos ++;
                 if(bytes_sent <0){
                     cerr << "Error : sending packet id " << packet_id << endl;
                     // try sending again 
@@ -222,13 +317,33 @@ int main(){
                     continue;
                 }
                 std::cout << "Sent packet id " << packet_id << " with size " << bytes_sent << " bytes" << endl;
-                usleep(1000); // sleep for 1 ms to avoid flooding the network
+
+                usleep(2000); // sleep for 2 ms to avoid flooding the network
+                // reading ack here 
+                std::memset(&ack_pack_id, 0, sizeof(ack_pack_id));
+                int n = recvfrom(sockfd, &ack_pack_id, sizeof(ack_pack_id), 0, (struct sockaddr*)&remoteAddr, &addr_size);
+
+                if(ack_pack_id == current_acks) {
+                    // as soon as the ack reaches the correct one, I'm gonna 
+                    current_acks ++;
+                    window_end++;
+                } else {
+                    // again send all the packets from the the current_acks and current packet id
+                    // shouldn't be done but for now I'm gonna stay in loop till I recive a acknowledgement 
+                    
+                }
+
+                if(n > 0) {
+                    cout << "error : wasnt able to read the acknowledgement somethings wrong " << endl;
+
+                }
+                
             }
             file.close();
             std::cout << "File transfer completed for file " << fileName << endl;
             message = '\0';
 
-            continue;
+            continue; */
         }
 
         if (commandMap["command"]=="delete") {
@@ -338,9 +453,6 @@ int main(){
 
             std::cout << "file transfer incomplete " << endl;
             continue;
-
-
-
             }
             
         }

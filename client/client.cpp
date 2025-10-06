@@ -163,6 +163,17 @@ int main() {
                     packets_recieved ++;
                     cout << "packet recieved :" << packet.packet_id << " current status :" 
                     << packets_recieved << " /" << total_packets << endl;
+                    cout << "sending ack for this packet" << endl;
+                    uint32_t ack_packet_id = htonl(static_cast<uint32_t>(packet.packet_id));
+                    sendto(sockfd, &ack_packet_id, sizeof(ack_packet_id), 0, (struct sockaddr*)&serverAddr, addr_size);
+                    cout << "acknowledgement packet for " << packet.packet_id << " sent" << endl;
+                } else {
+                    // sending ack again 
+                    // means packet was already recived but ack was lost
+                    cout << "packet " << packet.packet_id << " already recieved, sending ack again" << endl;
+                    uint32_t ack_packet_id = htonl(static_cast<uint32_t>(packet.packet_id));
+                    sendto(sockfd, &ack_packet_id, sizeof(ack_packet_id), 0, (struct sockaddr*)&serverAddr, addr_size);
+                    cout << "acknowledgement packet for " << packet.packet_id << " sent" << endl;
                 }
 
                 // sending ack 
