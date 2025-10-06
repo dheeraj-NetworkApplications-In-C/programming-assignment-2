@@ -2,25 +2,8 @@ import subprocess
 import re
 import json
 import sys
-import time
-import threading
-
-def spinner(message="Grading in progress..."):
-    symbols = ['|', '/', '-', '\\']
-    idx = 0
-    while not spinner_done:
-        sys.stdout.write(f"\r{message} {symbols[idx % len(symbols)]}")
-        sys.stdout.flush()
-        time.sleep(0.1)
-        idx += 1
-    sys.stdout.write("\rDone grading! ✅\n")
 
 def run_grading_script(script_path):
-    global spinner_done
-    spinner_done = False
-    spinner_thread = threading.Thread(target=spinner)
-    spinner_thread.start()
-
     try:
         result = subprocess.run(
             ["bash", script_path],
@@ -29,11 +12,11 @@ def run_grading_script(script_path):
             text=True,
             check=True
         )
-    finally:
-        spinner_done = True
-        spinner_thread.join()
-
-    return result.stdout, result.stderr
+        return result.stdout, result.stderr
+    except subprocess.CalledProcessError as e:
+        print("Script failed with error code:", e.returncode)
+        print("Error output:\n", e.stderr)
+        sys.exit(1)
 
 def parse_output(output):
     ftp_features = {
@@ -80,6 +63,8 @@ def determine_status(score):
         return "FAIL ❌", 1
 
 def main():
+    
+    print("Running grading script...")
     script_path = "./grade_py.sh"
     stdout, stderr = run_grading_script(script_path)
     scores = parse_output(stdout)
@@ -89,7 +74,7 @@ def main():
     print("\n=== Grading Summary ===")
     print(f"Status: {status}")
     print(f"Basic FTP Features: {scores['Basic FTP Features']} / 75")
-    print(f"Reliable Transfer: {scores['Reliable Transfer']} / 25")
+    print(f"Reliable Transfer under netem packet loss: {scores['Reliable Transfer']} / 25")
     print(f"Total Score: {scores['Total Score']} / 100")
     print("\nDetails:")
     for feature, score in scores["Details"].items():
