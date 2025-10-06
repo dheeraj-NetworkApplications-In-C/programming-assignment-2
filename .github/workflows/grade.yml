@@ -1,0 +1,35 @@
+name: Grade Submission
+
+on:
+  push:
+    branches:
+      - programming-assignment-2-*
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3 \
+            jq \
+            g++ \
+            iproute2  # includes tc for netem
+
+      - name: Run grading script
+        run: |
+          sudo python3 grade_github.py
+      - name: Display summary
+        run: |
+          echo "### Grading Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Basic FTP Features:** $(jq '.["Basic FTP Features"]' parsed_scores.json)/75" >> $GITHUB_STEP_SUMMARY
+          echo "**Reliable Transfer:** $(jq '.["Reliable Transfer"]' parsed_scores.json)/25" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Score:** $(jq '.["Total Score"]' parsed_scores.json)/100" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Details:**" >> $GITHUB_STEP_SUMMARY
+          jq -r '.Details | to_entries[] | "- \(.key): \(.value) points"' parsed_scores.json >> $GITHUB_STEP_SUMMARY
