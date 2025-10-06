@@ -1,0 +1,12 @@
+{
+  "Basic FTP Features": 75,
+  "Reliable Transfer": 25,
+  "Total Score": 100,
+  "Details": {
+    "ls": 15.0,
+    "get": 15.0,
+    "delete": 15.0,
+    "put": 15.0,
+    "exit": 15.0
+  }
+}
