@@ -3,7 +3,7 @@ name: Grade Submission
 on:
   push:
     branches:
-      - programming-assignment-2-*
+      - programming-assignment-*
 
 jobs:
   grade:
